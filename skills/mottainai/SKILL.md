@@ -1,99 +1,137 @@
 ---
 name: mottainai
-description: Checks whether your Claude Code usage is reasonable and suggests concrete ways to cut token consumption. Aggregates your local transcripts with a bundled script, then reads the numbers against known savings principles. Read-only — it never changes settings or files. Use when the user asks "check my token usage", "why do I hit the limit so fast", "where are my tokens going", "review how I'm using Claude Code", or in Japanese 「もったいない使い方していない？」「節約できるところある？」「使用量をチェックして」「消費が多い原因を調べて」「上限にすぐ達するのはなぜ」.
+description: Checks whether the user's Claude Code habits are costing them more of their usage allowance than they need to, and suggests what to change. Runs a bundled script that reads local transcripts, then reads the signals against ten known cost patterns. Read-only — it never changes settings or files. Use when the user asks "why do I hit the limit so fast", "check my token usage", "where are my tokens going", "am I using Claude Code efficiently", "what's eating my quota", or in Japanese 「もったいない使い方していない？」「節約できるところある？」「使用量をチェックして」「上限にすぐ達するのはなぜ」, or in Korean 「토큰 사용량 확인해줘」「사용량이 왜 이렇게 빨리 차나요」.
 ---
 
-# もったいないチェック / Usage checkup
+# mottainai — usage checkup
 
-Claude Codeの会話ログを実際に集計して、**「今の使い方のどこにトークンが流れているか」**を見つけ、減らす手を提案するスキル。
+Finds what is eating the user's allowance and names the habit behind it.
 
-**読み取りだけを行い、設定やファイルの変更は一切しない。** 提案までが仕事で、直すかどうかは本人が決める。
+**Read-only.** Report, then stop. Never edit settings, config, or transcripts.
+**Report in the user's language**, whatever they wrote to you in.
 
-**報告は利用者の言語で書く。** 日本語で話しかけられたら日本語、英語なら英語。以下の例文は日本語の場合のもの。
+## Why people open this
 
-## 進める前に知っておくこと
+Usually because they just hit a limit, or watched `/usage` climb and got worried.
+They are often not engineers. They want one thing they can do differently, not a
+lecture. Give them that and get out of the way.
 
-**専門用語をそのまま出さない。** 「cache read」なら「会話の読み直し」のように言い換える。利用者がエンジニアとは限らない。生のコマンド出力や表をそのまま貼らない。
+## Step 1 — run the counting script
 
-**責める報告にしない。** このスキルは数字を扱うため、書き方を誤ると「無駄が多い」「使い方が下手」と読まれてしまう。**多く使っていること自体は問題ではない**という前提に立ち、「ここを変えると軽くなります」という前向きな形だけで書く。以下は使わない表現。
+Pick by platform. Both live next to this file and need nothing installed.
 
-- 「無駄」「非効率」「もったいない」「使いすぎ」（スキル名に反するようだが、名前は自嘲であって、他人に向ける言葉ではない）
-- 「〜すべきでした」のような、過去のやり方を否定する言い方
-- 消費量の大きさを驚いてみせる書き方
+- **Windows**: `powershell -ExecutionPolicy Bypass -File "<skill-dir>/scripts/analyze-usage.ps1" -Lang en`
+- **macOS / Linux**: `sh "<skill-dir>/scripts/analyze-usage.sh" -l en`
 
-## 手順
+`-Lang` / `-l` accepts `en`, `ja`, `ko` only. For every other language, leave it
+at `en` and translate the report yourself — that costs nothing extra.
 
-### 1. 集計する
+Options: `-Days N` / `-d N` widens the long window (default 7).
 
-このスキルのディレクトリにある `scripts/analyze-usage.js` を実行する。
+**Do not read transcripts yourself with Read or Grep.** The script exists so the
+counting is free. Hand-reading logs would cost more than this checkup can save.
 
-```bash
-node <skill-dir>/scripts/analyze-usage.js --days 14
+If the script reports no transcripts, tell the user where it looked and mention
+`CLAUDE_PROJECTS_DIR`. Do not go hunting.
+
+## Step 2 — know what you are looking at
+
+The script prints two windows: the **current 5-hour block** (which starts at the
+first activity after a 5-hour-plus gap, matching how the real rolling limit
+opens) and the **last 7 days**.
+
+Each shows a **weighted** split and a **raw** token count. They differ, and the
+weighted one is the honest one:
+
+| | costs | why |
+|---|---|---|
+| re-reading the conversation | 0.1x | cached prefix, billed at a tenth |
+| newly supplied content | 1.25x | writing to cache carries a premium |
+| replies | 5x | output is the expensive end |
+
+Raw token counts make re-reading look enormous — often 90% — because they treat
+every token as equal. Weighted, it is usually a third to a half. **Lead with the
+weighted number.** Mention raw only if the user asks.
+
+Two limits to state plainly when they matter, and never paper over:
+
+- **This is Claude Code only.** claude.ai and the desktop app draw on the same
+  allowance and are invisible here.
+- **It cannot show how much is left.** No local file holds that. This answers
+  *what is costing you*, not *how much remains*. `/usage` answers the latter.
+
+If the script prints a `!` line saying the price table is stale, then — and only
+then — fetch https://www.anthropic.com/pricing once, compare against
+`reference/prices.tsv`, and tell the user if a number moved. Otherwise never
+touch the network.
+
+## Step 3 — match the signals to a pattern
+
+Ten patterns. Check each against the printed signals. Most runs match two or three.
+
+| # | Pattern | Trigger | Next time |
+|---|---|---|---|
+| 1 | **Long haul** | a session is ≥20% of the window and its reread is ≥55% | Start a fresh conversation when the topic changes (`/clear`) |
+| 2 | **Heavy load-in** | the `few turns but heavy` line is present | Hand over only the files needed; summarise big documents first |
+| 3 | **Wrong model** | opus ≥40% and the heavy sessions' tools are mostly Edit/Write/Read/Bash | Drop to a mid model (`/model`) for work with a known answer |
+| 4 | **Repeat grind** | one tool is ≥40% of all calls, or ≥30 calls | Do it once as a script, or use the source app's bulk action |
+| 5 | **Drip feeding** | raw output ÷ user turns is under ~1,500 | Ask for several things in one message instead of one at a time |
+| 6 | **Scheduled creep** | scheduled-task share ≥15% | Run it less often, or narrow what each run does |
+| 7 | **Screen work** | browser/screenshot tools ≥15% of calls | Screenshots are heavy; ask for page text rather than pictures |
+| 8 | **Spinning** | failed tool results ≥10% | Failures stay in the conversation and get re-read; start clean after a run of errors |
+| 9 | **Overthinking** | thinking share of replies ≥50% | Say when a task is simple, or drop to a lighter model |
+| 10 | **Too many deputies** | subagent share ≥25% | Each subagent re-reads the background from scratch; use them for genuinely separate work |
+
+Judge, don't just threshold. A title is a guess about what a session was for —
+say "this looks like X, is that right?" rather than asserting it.
+
+## Step 4 — write the report
+
+Keep it short. Shape:
+
+```
+<one line: the biggest weighted item, as a fraction, in plain words>
+
+The one that would help most is <pattern, in plain language>.
+<two or three lines: which sessions, and what to do differently next time>
+
+Also worth knowing:
+- <at most two more, one line each>
+
+Want to start with <the one thing>?
 ```
 
-- 期間の指定がなければ直近14日でよい。広い範囲を頼まれたら `--days 30` や `--all`
-- Node.js が必要（v18以降）。無い場合はその旨を伝えて終える
-- 会話ログが見つからない場合、スクリプトがその旨を出力する。環境変数 `CLAUDE_PROJECTS_DIR` で場所を指定できることを案内する
+Rules:
 
-このスクリプトは `~/.claude/projects/` にある会話ログを読み、消費の内訳・モデル別の割合・消費の大きいセッション・ツールの使用回数・日別の推移を出す。**会話の本文は出力されない**（見出し用のタイトルのみ）。
+- **At most three suggestions.** Ten patterns is the range you can detect, not
+  the number you report. If more than three matched, name the count and ask
+  first: *"there are N more — listing them will use more tokens, shall I?"*
+- **Every suggestion carries its "next time" line.** Naming a cause without
+  naming the change is not useful to someone who is worried.
+- **Percentages, not raw counts**, in prose — "about half" beats "46%".
+- Identify sessions by **date and title**, never by ID or filename.
+- Nothing matched? Say so and stop. Do not manufacture a finding.
+- Close with the cost of the checkup itself: *"this checkup added about 5,000
+  tokens — a small slice of one 5-hour block."* A tool about spending should not
+  hide its own. (Measured: this file plus the script's output plus a short
+  report. Run inside an already-long conversation it costs more, because the
+  whole conversation is re-read — worth saying if pattern 1 came up.)
 
-**ログを自分でRead/Grepで読み直さないこと。** 数を数える作業はスクリプト側に任せてある。手で読み直すと、それ自体が大きな消費になる（このスキルの趣旨に反する）。
+## Tone
 
-### 2. 判断の土台を読む
+The user is worried about money or about being cut off. Do not add to it.
 
-このスキルのディレクトリにある `reference/principles.md` を読む。消費が増える仕組みと、効く手が5つの観点にまとめてある。
+- Never: "wasteful", "inefficient", "too much", "you should have".
+- Never remark on how large their usage is. High usage is not a fault.
+- Frame every finding as a change available now, not a mistake already made.
 
-### 3. 4つの観点で読む
+## Never
 
-集計結果を次の観点で見る。**当てはまらない観点は無理に書かない。**
+- Change any setting, config file, or transcript
+- Read conversation content — the signals are enough
+- Convert tokens to money; this is about an allowance, not a bill
+- Suggest changing their plan
+- Write files unless the user asks
 
-**(1) 会話の長さ**
-「読み直しの割合」が90%を超えていて消費が大きいセッションを探す。1つの会話を続けた結果、毎回それまでの全文を読み直している状態。会話を区切る（`/clear`）のが効く場面。どのセッションが該当したかを、タイトルと日付で具体的に挙げる。
-
-**発言数が少ないのに重いセッションは特に拾う。** 序盤に読み込んだ資料が以降ずっと読み直されている形で、本人にとって意外な発見になりやすい。
-
-**(2) モデルの選び方**
-モデル別の割合を見て、上位モデルの比率が高い場合、その消費が「読んで気づく作業」に使われていたかを、セッションのタイトルとツール内訳から推測する。Edit・Read・Bashが中心で手順的な作業に見えるセッションが上位モデルだったなら、下げる候補として挙げる。
-
-**タイトルだけで断定しない。**「〜に見えますが、実際はどうでしたか」と確認する形で書く。中身を知っているのは本人だけ。
-
-**(3) 機械に任せられる部分**
-ツールの使用回数の上位に、同じ操作の繰り返し（ファイルのコピー・移動・整形、1件ずつのAPI処理など）が並んでいないかを見る。並んでいれば、スクリプト化して消費なしで済ませる候補になる。
-
-**(4) 定期実行タスク**
-定期実行タスクの割合を見る。全体に対して大きければ、実行頻度や1回の作業量を見直す候補として挙げる。小さければ触れなくてよい。
-
-### 4. 報告する
-
-**形式は次の通り。長くしない。**
-
-```
-使い方を見てきました。直近14日で、全体の◯割が「会話の読み直し」に使われていました。
-
-いちばん効きそうなのは、△△です。
-（理由を2〜3行。どのセッションが該当したかを具体的に）
-
-他に気づいた点：
-- （あれば1〜2件だけ。無ければこの行ごと省く）
-
-まずは△△から試してみますか。
-```
-
-**守ること：**
-
-- 提案は**多くても3つまで**。全部並べず、効きそうな順に絞る
-- 最後に出す「今やること」は**1つだけ**。残りは手元に置き、片付いてから次を出す
-- 数字は割合で伝える（「89%」より「全体の9割ほど」の方が伝わる）
-- 該当するセッションは、日付とタイトルで示す（セッションIDやファイル名は出さない）
-- 気になる点が無ければ「今の使い方で特に引っかかるところはありませんでした」で終える。無理に指摘を作らない
-
-## やらないこと
-
-- 設定ファイル（`settings.json`、`CLAUDE.md` など）の書き換え
-- 会話ログの削除・移動
-- 会話の本文を読み込むこと（集計結果だけで判断する）
-- 契約プランの変更提案（消費の減らし方が主題であって、支払い方の話ではない）
-
-## 補足：この数字は課金額ではない
-
-集計しているのはトークン数であって、請求額ではない。定額プランの場合、上限に近づく速さの目安として読む。**金額に換算して伝えない。**
+If they do ask for a script to replace a repeated manual job, write it then —
+tailored to their actual case. Ship no templates; every situation differs.
