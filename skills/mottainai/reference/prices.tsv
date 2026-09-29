@@ -1,7 +1,7 @@
 # Claude model prices, USD per 1M tokens. Read by both analyze scripts.
 # Only ratios between these numbers matter — mottainai never reports money.
 #
-# UPDATED: 2026-06-24
+# UPDATED: 2026-09-29
 # Bump the UPDATED date whenever you edit a row. The scripts warn once the
 # table is more than 90 days old; that warning is the only time the skill
 # spends tokens checking https://www.anthropic.com/pricing for changes.
@@ -11,8 +11,8 @@
 # which is habits, not invoices.
 #
 # family	input	output
-opus	5.00	25.00
-sonnet	3.00	15.00
+opus	4.00	20.00
+sonnet	2.00	10.00
 haiku	1.00	5.00
 fable	10.00	50.00
-other	3.00	15.00
+other	2.00	10.00
